@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>VoidBloom</title>
+<style>
+  body { margin:0; overflow:hidden; background:#000; touch-action:none; }
+  canvas { display:block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+let w, h, centerX, centerY;
+
+function resize() {
+  w = c.width = window.innerWidth;
+  h = c.height = window.innerHeight;
+  centerX = w / 2;
+  centerY = h / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const buffer = ctx.createImageData(w, h);
+const data = buffer.data;
+
+const gridSize = 4;
+const cols = Math.ceil(w / gridSize);
+const rows = Math.ceil(h / gridSize);
+
+let grid = new Float32Array(cols * rows);
+let next = new Float32Array(cols * rows);
+grid.fill(0);
+
+const diffusionRate = 0.21;
+const feedRate = 0.055;
+const killRate = 0.062;
+const growthSpeed = 0.04;
+const colorCycleSpeed = 0.0008;
+
+let time = 0;
+let initialSeed = false;
+
+let mouseX = centerX;
+let mouseY = centerY;
+
+function plantSeed(x, y) {
+  const col = Math.floor(x / gridSize);
+  const row = Math.floor(y / gridSize);
+  if (col >= 0 && col < cols && row >= 0 && row < rows) {
+    for (let dy = -8; dy <= 8; dy++) {
+      for (let dx = -8; dx <= 8; dx++) {
+        const nx = col + dx;
+        const ny = row + dy;
+        if (nx >= 0 && nx < cols && ny >= 0 && ny < rows) {
+          const dist = Math.sqrt(dx*dx + dy*dy);
+          if (dist < 8) {
+            const idx = ny * cols + nx;
+            grid[idx] = Math.max(grid[idx], 1.0 - dist / 10);
+          }
+        }
+      }
+    }
+  }
+}
+
+window.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  plantSeed(mouseX, mouseY);
+});
+window.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouseX = t.clientX;
+  mouseY = t.clientY;
+  plantSeed(mouseX, mouseY);
+});
+window.addEventListener('click', e => {
+  if (!initialSeed) {
+    plantSeed(e.clientX, e.clientY);
+    initialSeed = true;
+  }
+});
+window.addEventListener('touchstart', e => {
+  if (!initialSeed) {
+    const t = e.touches[0];
+    plantSeed(t.clientX, t.clientY);
+    initialSeed = true;
+  }
+});
+
+function updateGrid() {
+  for (let y = 1; y < rows - 1; y++) {
+    for (let x = 1; x < cols - 1; x++) {
+      const i = y * cols + x;
+      let val = grid[i];
+      let lap = grid[i] * -1;
+      lap += grid[(y-1)*cols + x] * 0.2;
+      lap += grid[(y+1)*cols + x] * 0.2;
+      lap += grid[y*cols + x-1] * 0.2;
+      lap += grid[y*cols + x+1] * 0.2;
+      lap += grid[(y-1)*cols + x-1] * 0.05;
+      lap += grid[(y-1)*cols + x+1] * 0.05;
+      lap += grid[(y+1)*cols + x-1] * 0.05;
+      lap += grid[(y+1)*cols + x+1] * 0.05;
+
+      const feed = feedRate * (1 + Math.sin(time * 0.0001) * 0.01);
+      const kill = killRate * (1 + Math.cos(time * 0.00013) * 0.008);
+      const reaction = val * val * (1 - val);
+      const change = diffusionRate * lap - reaction + feed * (1 - val) - kill * val;
+
+      next[i] = Math.max(0, Math.min(1, val + change * growthSpeed));
+    }
+  }
+  [grid, next] = [next, grid];
+}
+
+function render() {
+  time++;
+  if (initialSeed || time > 300) updateGrid();
+
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const i = y * cols + x;
+      const value = grid[i];
+      const px = x * gridSize;
+      const py = y * gridSize;
+
+      const hue = (time * colorCycleSpeed + value * 140) % 360;
+      const saturation = 80 + value * 20;
+      const lightness = 10 + value * 60;
+
+      const r = Math.floor(lightness + (255 - lightness) * Math.cos(hue * Math.PI / 180) * saturation / 100);
+      const g = Math.floor(lightness + (255 - lightness) * Math.cos((hue + 120) * Math.PI / 180) * saturation / 100);
+      const b = Math.floor(lightness + (255 - lightness) * Math.cos((hue + 240) * Math.PI / 180) * saturation / 100);
+
+      for (let gy = 0; gy < gridSize; gy++) {
+        for (let gx = 0; gx < gridSize; gx++) {
+          const p = ((py + gy) * w + (px + gx)) * 4;
+          data[p] = r;
+          data[p+1] = g;
+          data[p+2] = b;
+          data[p+3] = 255;
+        }
+      }
+    }
+  }
+  ctx.putImageData(buffer, 0, 0);
+  requestAnimationFrame(render);
+}
+
+render();
+</script>
+</body>
+</html>

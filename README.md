@@ -1,1 +1,2 @@
 # VoidBloom
+öylesine yaptım la
